@@ -46,13 +46,13 @@ function Invoke-AdaptShareHunter {
         
         $BlackFilenames = @('id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519', 'NTDS.DIT', 'NTDS', 'shadow', 'passwd', 'SAM', 'SYSTEM', 'SECURITY', 'pwd.db', '.netrc', '.pgpass', '.my.cnf', 'credentials', 'credentials.xml', 'recentservers.xml', 'sftp-config.json', 'mobaxterm.ini', 'confCons.xml', 'ConsoleHost_history.txt')
         
-        $RedFilenames = @('web.config', 'app.config', 'applicationHost.config', 'machine.config', 'connections.config', 'secrets.json', 'appsettings.json', 'database.yml', 'settings.py', 'wp-config.php', 'configuration.php', 'LocalSettings.php', 'config.php', '.htpasswd', '.env', '.env.local', '.env.production', 'docker-compose.yml', 'Dockerfile', 'Vagrantfile', 'ansible.cfg', 'inventory', 'vault.yml', 'Jenkins.xml', 'hudson.util.Secret', 'master.key', 'credentials.xml', 'terraform.tfstate', 'terraform.tfvars', '*.auto.tfvars')
+        $RedFilenames = @('web.config', 'app.config', 'applicationHost.config', 'machine.config', 'connections.config', 'secrets.json', 'appsettings.json', 'database.yml', 'settings.py', 'wp-config.php', 'configuration.php', 'LocalSettings.php', 'config.php', '.htpasswd', '.env', '.env.local', '.env.production', 'docker-compose.yml', 'Dockerfile', 'Vagrantfile', 'ansible.cfg', 'inventory', 'vault.yml', 'Jenkins.xml', 'hudson.util.Secret', 'master.key', 'credentials.xml', 'terraform.tfstate', 'terraform.tfvars')
         
         $YellowNamePatterns = @('passw', 'secret', 'creds', 'credential', 'login', 'logon', 'token', 'apikey', 'api_key', 'api-key', 'auth', 'private', 'vpn', 'ftp', 'ssh', 'rdp', 'admin', 'backup', 'dump', 'export', 'database', 'db_', '_db', 'mysql', 'mssql', 'oracle', 'postgres', 'mongo', 'redis', 'elastic', 'key', 'cert', 'ssl', 'tls', 'pki', 'handover', 'onboard', 'as-built', 'asbuilt', 'network', 'diagram', 'topology', 'inventory', 'asset', 'cmdb')
         
-        $SkipExtensions = @('.exe', '.dll', '.sys', '.msi', '.msp', '.msu', '.cab', '.cat', '.ocx', '.cpl', '.scr', '.drv', '.efi', '.fon', '.ttf', '.otf', '.woff', '.woff2', '.eot', '.bmp', '.gif', '.ico', '.jpg', '.jpeg', '.png', '.svg', '.tif', '.tiff', '.webp', '.psd', '.ai', '.eps', '.mp3', '.mp4', '.wav', '.wma', '.wmv', '.avi', '.mkv', '.mov', '.flv', '.swf', '.zip', '.rar', '.7z', '.gz', '.tar', '.iso', '.img', '.vdi', '.vhd', '.lock', '.log', '.tmp', '.temp', '.cache', '.css', '.less', '.scss', '.map', '.min.js', '.min.css', '.bundle.js', '.chunk.js')
+        $SkipExtensions = @('.exe', '.dll', '.sys', '.msi', '.msp', '.msu', '.cab', '.cat', '.ocx', '.cpl', '.scr', '.drv', '.efi', '.fon', '.ttf', '.otf', '.woff', '.woff2', '.eot', '.bmp', '.gif', '.ico', '.jpg', '.jpeg', '.png', '.svg', '.tif', '.tiff', '.webp', '.psd', '.ai', '.eps', '.mp3', '.mp4', '.wav', '.wma', '.wmv', '.avi', '.mkv', '.mov', '.flv', '.swf', '.zip', '.rar', '.7z', '.gz', '.tar', '.iso', '.img', '.vdi', '.vhd', '.lock', '.log', '.tmp', '.temp', '.cache', '.css', '.less', '.scss', '.map')
         
-        $SkipPaths = @('\\Windows\\', '\\Program Files\\', '\\Program Files (x86)\\', '\\ProgramData\\Microsoft\\', '\\AppData\\Local\\Microsoft\\', '\\node_modules\\', '\\vendor\\', '\\packages\\', '\\.git\\', '\\.svn\\', '\\__pycache__\\', '\\site-packages\\', '\\Temp\\', '\\tmp\\', '\\cache\\', '\\Cache\\', '\\logs\\', '\\Logs\\', '\\log\\')
+        $SkipPaths = @('Windows', 'Program Files', 'Program Files (x86)', 'ProgramData', 'node_modules', 'vendor', 'packages', '.git', '.svn', '__pycache__', 'site-packages', 'Temp', 'tmp', 'cache', 'Cache', 'logs', 'Logs')
         
         $ContentPatterns = @{
             'Black' = @(
@@ -61,25 +61,23 @@ function Invoke-AdaptShareHunter {
                 '(?i)aws_access_key_id\s*[=:]\s*[A-Z0-9]{20}',
                 '(?i)aws_secret_access_key\s*[=:]\s*[A-Za-z0-9/+=]{40}',
                 'AKIA[0-9A-Z]{16}',
-                '(?i)connectionstring\s*[=:]\s*["\'][^"\']+password[^"\']+["\']',
-                '(?i)(password|passwd|pwd)\s*[=:]\s*["\'][^"\']{4,}["\']',
+                '(?i)connectionstring\s*[=:].*password',
+                '(?i)(password|passwd|pwd)\s*[=:]\s*["''][^"'']{4,}["'']',
                 '(?i)DefaultPassword\s*[=:]\s*.+',
                 '(?i)validationKey\s*=\s*"[A-F0-9]+"',
                 '(?i)decryptionKey\s*=\s*"[A-F0-9]+"'
             )
             'Red' = @(
-                '(?i)(api[_-]?key|apikey)\s*[=:]\s*["\'][^"\']{10,}["\']',
-                '(?i)(secret[_-]?key|secretkey)\s*[=:]\s*["\'][^"\']{10,}["\']',
-                '(?i)(auth[_-]?token|authtoken)\s*[=:]\s*["\'][^"\']{10,}["\']',
+                '(?i)(api[_-]?key|apikey)\s*[=:]\s*["''][^"'']{10,}["'']',
+                '(?i)(secret[_-]?key|secretkey)\s*[=:]\s*["''][^"'']{10,}["'']',
+                '(?i)(auth[_-]?token|authtoken)\s*[=:]\s*["''][^"'']{10,}["'']',
                 '(?i)bearer\s+[a-zA-Z0-9_\-\.]+',
                 '(?i)Basic\s+[A-Za-z0-9+/=]{20,}',
-                '(?i)(client[_-]?secret|clientsecret)\s*[=:]\s*["\'][^"\']+["\']',
-                '(?i)GITHUB[_-]?TOKEN\s*[=:]\s*["\']?[A-Za-z0-9_]+',
+                '(?i)(client[_-]?secret|clientsecret)\s*[=:]\s*["''][^"'']+["'']',
+                '(?i)GITHUB[_-]?TOKEN\s*[=:]\s*["'']?[A-Za-z0-9_]+',
                 '(?i)ghp_[A-Za-z0-9]{36}',
-                '(?i)gho_[A-Za-z0-9]{36}',
                 '(?i)sk-[A-Za-z0-9]{48}',
-                '(?i)xox[baprs]-[0-9]{10,}-[A-Za-z0-9]+',
-                '(?i)(jdbc|mysql|postgresql|sqlserver|oracle)://[^\s<>\"]+:[^\s<>\"]+@'
+                '(?i)xox[baprs]-[0-9]{10,}-[A-Za-z0-9]+'
             )
             'Yellow' = @(
                 '(?i)password\s*[=:]\s*\S+',
@@ -87,19 +85,14 @@ function Invoke-AdaptShareHunter {
                 '(?i)pwd\s*[=:]\s*\S+',
                 '(?i)credentials?\s*[=:]\s*\S+',
                 '(?i)secret\s*[=:]\s*\S+',
-                '(?i)token\s*[=:]\s*\S+',
-                '(?i)(user|username|login)\s*[=:]\s*\S+'
+                '(?i)token\s*[=:]\s*\S+'
             )
         }
         
         $ShareNames = @('C$', 'ADMIN$', 'IPC$', 'D$', 'E$', 'SYSVOL', 'NETLOGON', 'print$', 'Users', 'Shared', 'Public', 'Data', 'Share', 'Shares', 'Common', 'Software', 'Apps', 'Applications', 'Install', 'Installs', 'Backup', 'Backups', 'IT', 'HR', 'Finance', 'Legal', 'Dev', 'Development', 'Staging', 'Production', 'Scripts', 'Tools', 'Utilities', 'Home', 'homes', 'Profiles', 'Department', 'Projects', 'Archive', 'Archives', 'Logs', 'temp', 'Temp', 'Media', 'Resources', 'Assets', 'Content', 'Web', 'WWW', 'intranet', 'files', 'fileshare', 'Transfer', 'FTP', 'Upload', 'Downloads', 'Scans')
 
-        function Get-AdaptDomainComputer {
+        function Get-AdaptDomainComputerInternal {
             Param([String]$Domain, [String]$Server)
-            $SearcherArgs = @{}
-            if ($Domain) { $SearcherArgs['Domain'] = $Domain }
-            if ($Server) { $SearcherArgs['Server'] = $Server }
-            
             try {
                 $Searcher = New-Object DirectoryServices.DirectorySearcher
                 if ($Server) {
@@ -119,7 +112,7 @@ function Invoke-AdaptShareHunter {
             }
         }
 
-        function Test-AdaptPort {
+        function Test-AdaptPortInternal {
             Param([String]$ComputerName, [Int]$Port = 445, [Int]$Timeout = 100)
             try {
                 $tcp = New-Object System.Net.Sockets.TcpClient
@@ -136,7 +129,7 @@ function Invoke-AdaptShareHunter {
             catch { return $false }
         }
 
-        function Get-AdaptShareList {
+        function Get-AdaptShareListInternal {
             Param([String]$ComputerName)
             $FoundShares = @()
             foreach ($ShareName in $ShareNames) {
@@ -151,7 +144,7 @@ function Invoke-AdaptShareHunter {
             return $FoundShares
         }
 
-        function Get-FileTriage {
+        function Get-FileTriageInternal {
             Param([String]$FilePath, [String]$FileName, [String]$Extension)
             
             $ExtLower = $Extension.ToLower()
@@ -172,7 +165,7 @@ function Invoke-AdaptShareHunter {
             return $null
         }
 
-        function Search-FileContent {
+        function Search-FileContentInternal {
             Param([String]$FilePath, [Int]$MaxSize, [Int]$Context)
             
             $Results = @()
@@ -185,15 +178,15 @@ function Invoke-AdaptShareHunter {
                 
                 foreach ($Level in @('Black', 'Red', 'Yellow')) {
                     foreach ($Pattern in $ContentPatterns[$Level]) {
-                        $Matches = [regex]::Matches($Content, $Pattern)
-                        foreach ($Match in $Matches) {
-                            $Start = [Math]::Max(0, $Match.Index - $Context)
-                            $Length = [Math]::Min($Content.Length - $Start, $Match.Length + ($Context * 2))
+                        $RegMatches = [regex]::Matches($Content, $Pattern)
+                        foreach ($RegMatch in $RegMatches) {
+                            $Start = [Math]::Max(0, $RegMatch.Index - $Context)
+                            $Length = [Math]::Min($Content.Length - $Start, $RegMatch.Length + ($Context * 2))
                             $Snippet = $Content.Substring($Start, $Length) -replace '[\r\n]+', ' '
                             $Results += [PSCustomObject]@{
                                 Triage = $Level
                                 Pattern = $Pattern
-                                Match = $Match.Value
+                                Match = $RegMatch.Value
                                 Context = $Snippet.Trim()
                             }
                         }
@@ -204,8 +197,8 @@ function Invoke-AdaptShareHunter {
             return $Results
         }
 
-        function Write-Finding {
-            Param($Finding, [String]$OutputFile)
+        function Write-FindingInternal {
+            Param($Finding, [String]$OutFile)
             
             $Color = switch ($Finding.Triage) {
                 'Black' { 'Magenta' }
@@ -217,13 +210,18 @@ function Invoke-AdaptShareHunter {
             
             $Timestamp = Get-Date -Format "HH:mm:ss"
             $Line = "[$Timestamp] [$($Finding.Triage)] $($Finding.Path)"
-            if ($Finding.Match) { $Line += " | $($Finding.Match)" }
-            if ($Finding.Context) { $Line += " | $($Finding.Context.Substring(0, [Math]::Min(100, $Finding.Context.Length)))..." }
+            if ($Finding.Match) { 
+                $Line = $Line + " | " + $Finding.Match 
+            }
+            if ($Finding.Context) { 
+                $CtxLen = [Math]::Min(100, $Finding.Context.Length)
+                $Line = $Line + " | " + $Finding.Context.Substring(0, $CtxLen) + "..."
+            }
             
             Write-Host $Line -ForegroundColor $Color
             
-            if ($OutputFile) {
-                $Line | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+            if ($OutFile) {
+                $Line | Out-File -FilePath $OutFile -Append -Encoding UTF8
             }
         }
 
@@ -246,7 +244,7 @@ function Invoke-AdaptShareHunter {
     END {
         if ($AllComputers.Count -eq 0 -and -not $SharePath) {
             Write-Host "[*] Querying AD for computers..." -ForegroundColor Cyan
-            $Computers = Get-AdaptDomainComputer -Domain $Domain -Server $Server
+            $Computers = Get-AdaptDomainComputerInternal -Domain $Domain -Server $Server
             foreach ($Computer in $Computers) {
                 $AllComputers += [PSCustomObject]@{ Type = 'Computer'; Value = $Computer }
             }
@@ -263,14 +261,14 @@ function Invoke-AdaptShareHunter {
                 $Computer = $Target.Value
                 
                 if (-not $NoPing) {
-                    if (-not (Test-AdaptPort -ComputerName $Computer -Port 445 -Timeout 100)) {
+                    if (-not (Test-AdaptPortInternal -ComputerName $Computer -Port 445 -Timeout 100)) {
                         Write-Verbose "[-] $Computer - Port 445 closed"
                         continue
                     }
                 }
                 
                 Write-Verbose "[*] Enumerating shares on $Computer"
-                $Shares = Get-AdaptShareList -ComputerName $Computer
+                $Shares = Get-AdaptShareListInternal -ComputerName $Computer
                 
                 foreach ($Share in $Shares) {
                     $UNC = "\\$Computer\$Share"
@@ -299,7 +297,8 @@ function Invoke-AdaptShareHunter {
         }
 
         if ($FindFiles -and $ProcessedShares.Count -gt 0) {
-            Write-Host "`n[*] Searching for interesting files in $($ProcessedShares.Count) shares..." -ForegroundColor Cyan
+            Write-Host "" -ForegroundColor Cyan
+            Write-Host "[*] Searching for interesting files in $($ProcessedShares.Count) shares..." -ForegroundColor Cyan
             
             foreach ($ShareUNC in $ProcessedShares) {
                 Write-Verbose "[*] Scanning: $ShareUNC"
@@ -314,11 +313,11 @@ function Invoke-AdaptShareHunter {
                             if ($File.Extension -eq $SkipExt) { $Skip = $true; break }
                         }
                         foreach ($SkipP in $SkipPaths) {
-                            if ($FilePath -like "*$SkipP*") { $Skip = $true; break }
+                            if ($FilePath -like "*\$SkipP\*") { $Skip = $true; break }
                         }
                         if ($Skip) { return }
                         
-                        $Triage = Get-FileTriage -FilePath $FilePath -FileName $File.Name -Extension $File.Extension
+                        $Triage = Get-FileTriageInternal -FilePath $FilePath -FileName $File.Name -Extension $File.Extension
                         
                         if ($Triage) {
                             $TriageLevel = $TriageLevels[$Triage]
@@ -331,14 +330,14 @@ function Invoke-AdaptShareHunter {
                                     Match = $null
                                     Context = $null
                                 }
-                                Write-Finding -Finding $Finding -OutputFile $OutputFile
+                                Write-FindingInternal -Finding $Finding -OutFile $OutputFile
                             }
                         }
                         
                         if ($SearchContent) {
                             $ExtLower = $File.Extension.ToLower()
                             if ($YellowExtensions -contains $ExtLower -or $RedExtensions -contains $ExtLower) {
-                                $ContentResults = Search-FileContent -FilePath $FilePath -MaxSize $MaxFileSize -Context $ContentContext
+                                $ContentResults = Search-FileContentInternal -FilePath $FilePath -MaxSize $MaxFileSize -Context $ContentContext
                                 foreach ($Result in $ContentResults) {
                                     $TriageLevel = $TriageLevels[$Result.Triage]
                                     if ($TriageLevel -ge $MinTriageLevel) {
@@ -350,7 +349,7 @@ function Invoke-AdaptShareHunter {
                                             Match = $Result.Match
                                             Context = $Result.Context
                                         }
-                                        Write-Finding -Finding $Finding -OutputFile $OutputFile
+                                        Write-FindingInternal -Finding $Finding -OutFile $OutputFile
                                     }
                                 }
                             }
@@ -358,14 +357,17 @@ function Invoke-AdaptShareHunter {
                     }
                 }
                 catch {
-                    Write-Verbose "[-] Error scanning $ShareUNC : $_"
+                    Write-Verbose "[-] Error scanning ${ShareUNC}: $_"
                 }
             }
         }
 
         if (-not $FindFiles) {
-            Write-Host "`n[*] Found $($ProcessedShares.Count) accessible shares:" -ForegroundColor Cyan
-            $ProcessedShares | ForEach-Object { Write-Host "    $_" -ForegroundColor White }
+            Write-Host "" -ForegroundColor Cyan
+            Write-Host "[*] Found $($ProcessedShares.Count) accessible shares:" -ForegroundColor Cyan
+            foreach ($s in $ProcessedShares) {
+                Write-Host "    $s" -ForegroundColor White
+            }
         }
     }
 }
