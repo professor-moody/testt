@@ -65,6 +65,12 @@ Directory to copy interesting files to.
 .PARAMETER NoPing
 Skip port 445 check before scanning.
 
+.PARAMETER PingTimeout
+Timeout in milliseconds for port 445 check. Default 1000ms (1 second).
+
+.PARAMETER WmiTimeout
+Timeout in milliseconds for WMI share enumeration. Default 5000ms (5 seconds).
+
 .PARAMETER Server
 Domain controller to query.
 
@@ -127,7 +133,8 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
         [String]$SnaffleDir,
 
         [Switch]$NoPing,
-        [Int]$PingTimeout = 100,
+        [Int]$PingTimeout = 1000,
+        [Int]$WmiTimeout = 5000,
 
         [Management.Automation.PSCredential]
         [Management.Automation.CredentialAttribute()]
@@ -939,10 +946,10 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
         $shareJobs = @()
 
         $shareScriptBlock = {
-            Param($Computer, $ExcludedShares, $CommonShares, $NoPing, $PingTimeout, $NoWMI)
+            Param($Computer, $ExcludedShares, $CommonShares, $NoPing, $PingTimeout, $NoWMI, $WmiTimeout)
 
             function Test-Port {
-                Param([String]$C, [Int]$P = 445, [Int]$T = 100)
+                Param([String]$C, [Int]$P = 445, [Int]$T = 1000)
                 try {
                     $tcp = New-Object System.Net.Sockets.TcpClient
                     $conn = $tcp.BeginConnect($C, $P, $null, $null)
@@ -954,38 +961,107 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
                 catch { return $false }
             }
 
+            # Fast share access check with timeout using .NET Tasks
+            function Test-ShareAccess {
+                Param([String]$UNC, [Int]$TimeoutMs = 2000)
+                try {
+                    $scriptBlock = [scriptblock]::Create("Test-Path '$UNC' -ErrorAction SilentlyContinue")
+                    $ps = [PowerShell]::Create()
+                    $null = $ps.AddScript($scriptBlock)
+                    $handle = $ps.BeginInvoke()
+                    $completed = $handle.AsyncWaitHandle.WaitOne($TimeoutMs)
+                    if ($completed) {
+                        $result = $ps.EndInvoke($handle)
+                        $ps.Dispose()
+                        return $result
+                    }
+                    $ps.Stop()
+                    $ps.Dispose()
+                    return $false
+                }
+                catch { return $false }
+            }
+
+            # Fast net view alternative using direct SMB session
+            function Get-NetShares {
+                Param([String]$Computer, [Int]$TimeoutMs = 3000)
+                $shares = @()
+                try {
+                    # Use net view with timeout via job
+                    $job = Start-Job -ScriptBlock {
+                        param($c)
+                        $output = net view "\\$c" 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            $output | Where-Object { $_ -match '^\s*(\S+)\s+Disk' } | ForEach-Object {
+                                if ($_ -match '^\s*(\S+)\s+Disk') { $matches[1] }
+                            }
+                        }
+                    } -ArgumentList $Computer
+
+                    $completed = Wait-Job $job -Timeout ([Math]::Ceiling($TimeoutMs / 1000))
+                    if ($completed) {
+                        $shares = Receive-Job $job
+                    }
+                    Remove-Job $job -Force -ErrorAction SilentlyContinue
+                }
+                catch {}
+                return $shares
+            }
+
             $results = @()
 
+            # Step 1: Quick port check (increased timeout for reliability)
             if (-not $NoPing) {
                 if (-not (Test-Port -C $Computer -P 445 -T $PingTimeout)) {
                     return $results
                 }
             }
 
-            # WMI share enumeration (if allowed)
+            # Step 2: Try WMI first (most complete, with timeout)
             if (-not $NoWMI) {
                 try {
-                    $wmiShares = Get-WmiObject -Class Win32_Share -ComputerName $Computer -ErrorAction Stop
-                    foreach ($s in $wmiShares) {
-                        if (($s.Type -eq 0 -or $s.Type -eq 2147483648) -and $ExcludedShares -notcontains $s.Name) {
-                            $results += "\\$Computer\$($s.Name)"
+                    $wmiJob = Start-Job -ScriptBlock {
+                        param($c)
+                        Get-WmiObject -Class Win32_Share -ComputerName $c -ErrorAction Stop
+                    } -ArgumentList $Computer
+
+                    $completed = Wait-Job $wmiJob -Timeout ([Math]::Ceiling($WmiTimeout / 1000))
+                    if ($completed) {
+                        $wmiShares = Receive-Job $wmiJob
+                        Remove-Job $wmiJob -Force -ErrorAction SilentlyContinue
+                        if ($wmiShares) {
+                            foreach ($s in $wmiShares) {
+                                if (($s.Type -eq 0 -or $s.Type -eq 2147483648) -and $ExcludedShares -notcontains $s.Name) {
+                                    $results += "\\$Computer\$($s.Name)"
+                                }
+                            }
+                            if ($results.Count -gt 0) { return $results }
                         }
+                    } else {
+                        Remove-Job $wmiJob -Force -ErrorAction SilentlyContinue
                     }
-                    return $results
                 }
                 catch {}
             }
 
-            # SMB probing fallback (always used if NoWMI)
+            # Step 3: Try net view (faster than Test-Path probing)
+            $netShares = Get-NetShares -Computer $Computer -TimeoutMs 3000
+            if ($netShares.Count -gt 0) {
+                foreach ($shareName in $netShares) {
+                    if ($ExcludedShares -notcontains $shareName) {
+                        $results += "\\$Computer\$shareName"
+                    }
+                }
+                if ($results.Count -gt 0) { return $results }
+            }
+
+            # Step 4: Fallback to SMB probing with timeout (only if above methods failed)
             foreach ($shareName in $CommonShares) {
                 if ($ExcludedShares -notcontains $shareName) {
                     $unc = "\\$Computer\$shareName"
-                    try {
-                        if (Test-Path $unc -ErrorAction SilentlyContinue) {
-                            $results += $unc
-                        }
+                    if (Test-ShareAccess -UNC $unc -TimeoutMs 2000) {
+                        $results += $unc
                     }
-                    catch {}
                 }
             }
 
@@ -993,42 +1069,80 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
         }
 
         $discoveredShares = [System.Collections.Concurrent.ConcurrentBag[String]]::new()
+        $computerTargets = @()
+        $dfsTargets = @()
 
+        # Separate computer targets from DFS paths
         foreach ($target in $AllTargetPaths) {
             if ($target -is [PSCustomObject] -and $target.Type -eq 'Computer') {
-                $ps = [PowerShell]::Create()
-                $ps.RunspacePool = $shareRunspacePool
-                $null = $ps.AddScript($shareScriptBlock)
-                $null = $ps.AddArgument($target.Value)
-                $null = $ps.AddArgument($ExcludedShares)
-                $null = $ps.AddArgument($Script:CommonShares)
-                $null = $ps.AddArgument($NoPing.IsPresent)
-                $null = $ps.AddArgument($PingTimeout)
-                $null = $ps.AddArgument($NoWMI.IsPresent)
-
-                $shareJobs += [PSCustomObject]@{
-                    PowerShell = $ps
-                    Handle = $ps.BeginInvoke()
-                    Computer = $target.Value
-                }
+                $computerTargets += $target.Value
             }
             elseif ($target -is [String]) {
+                $dfsTargets += $target
                 $discoveredShares.Add($target)
             }
         }
 
-        # Collect share discovery results
+        if ($dfsTargets.Count -gt 0) {
+            Write-Status "Added $($dfsTargets.Count) DFS paths directly"
+        }
+
+        $totalComputers = $computerTargets.Count
+        if ($totalComputers -eq 0) {
+            Write-Status "No computers to scan for shares" -Level Warning
+        } else {
+            Write-Status "Scanning $totalComputers computers for shares..."
+        }
+
+        # Launch all jobs
+        foreach ($computer in $computerTargets) {
+            $ps = [PowerShell]::Create()
+            $ps.RunspacePool = $shareRunspacePool
+            $null = $ps.AddScript($shareScriptBlock)
+            $null = $ps.AddArgument($computer)
+            $null = $ps.AddArgument($ExcludedShares)
+            $null = $ps.AddArgument($Script:CommonShares)
+            $null = $ps.AddArgument($NoPing.IsPresent)
+            $null = $ps.AddArgument($PingTimeout)
+            $null = $ps.AddArgument($NoWMI.IsPresent)
+            $null = $ps.AddArgument($WmiTimeout)
+
+            $shareJobs += [PSCustomObject]@{
+                PowerShell = $ps
+                Handle = $ps.BeginInvoke()
+                Computer = $computer
+            }
+        }
+
+        # Collect share discovery results with progress
+        $completedCount = 0
+        $hostsWithShares = 0
+        $lastProgressUpdate = Get-Date
+
         foreach ($job in $shareJobs) {
             try {
                 $result = $job.PowerShell.EndInvoke($job.Handle)
-                foreach ($share in $result) {
-                    $discoveredShares.Add($share)
-                    Write-Host "[+] Found: $share" -ForegroundColor Green
+                if ($result.Count -gt 0) {
+                    $hostsWithShares++
+                    foreach ($share in $result) {
+                        $discoveredShares.Add($share)
+                        Write-Host "[+] Found: $share" -ForegroundColor Green
+                    }
                 }
             }
             catch {}
             finally {
                 $job.PowerShell.Dispose()
+            }
+
+            $completedCount++
+
+            # Progress update every 2 seconds or every 10 hosts
+            $now = Get-Date
+            if (($now - $lastProgressUpdate).TotalSeconds -ge 2 -or $completedCount % 10 -eq 0) {
+                $pct = [Math]::Round(($completedCount / $totalComputers) * 100, 0)
+                Write-Host "`r[*] Progress: $completedCount/$totalComputers ($pct%) - $hostsWithShares hosts with shares" -NoNewline -ForegroundColor Cyan
+                $lastProgressUpdate = $now
             }
 
             if ($Delay -gt 0) {
@@ -1039,7 +1153,12 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
         $shareRunspacePool.Close()
         $shareRunspacePool.Dispose()
 
-        Write-Status "Discovered $($discoveredShares.Count) accessible shares" -Level Success
+        # Clear progress line
+        if ($totalComputers -gt 0) {
+            Write-Host "`r$(' ' * 80)`r" -NoNewline
+        }
+
+        Write-Status "Discovered $($discoveredShares.Count) accessible shares from $hostsWithShares hosts" -Level Success
 
         # Deduplicate SYSVOL/NETLOGON
         $finalShares = @()
