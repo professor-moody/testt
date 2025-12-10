@@ -24,6 +24,10 @@ Search inside files for sensitive patterns.
 
 .PARAMETER SearchServiceAccounts
 Query AD for service accounts and search for references to them in files.
+Implies -SearchContent.
+
+.PARAMETER ServiceAccountsFile
+Path to write discovered service accounts (one per line).
 
 .PARAMETER CheckCertificates
 Parse certificate files to check for private keys.
@@ -97,6 +101,7 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
         [Switch]$FindFiles,
         [Switch]$SearchContent,
         [Switch]$SearchServiceAccounts,
+        [String]$ServiceAccountsFile,
         [Switch]$CheckCertificates,
         [Switch]$NoWMI,
         [Switch]$Stealth,
@@ -138,6 +143,13 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
             $FileThreads = 5
             $Delay = 500
             Write-Host "[*] Stealth mode enabled: DfsOnly, NoWMI, 5 threads, 500ms delay" -ForegroundColor Yellow
+        }
+        #endregion
+
+        #region SearchServiceAccounts implies SearchContent
+        if ($SearchServiceAccounts -and -not $SearchContent) {
+            $SearchContent = $true
+            Write-Host "[*] -SearchServiceAccounts implies -SearchContent, enabling content search" -ForegroundColor Yellow
         }
         #endregion
 
@@ -888,6 +900,12 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
         # Discover service accounts if requested
         if ($SearchServiceAccounts) {
             $Script:ServiceAccounts = Get-ServiceAccountsFromAD @CredArgs
+
+            # Write service accounts to file if specified
+            if ($ServiceAccountsFile -and $Script:ServiceAccounts.Count -gt 0) {
+                $Script:ServiceAccounts | Out-File -FilePath $ServiceAccountsFile -Encoding UTF8
+                Write-Status "Service accounts written to: $ServiceAccountsFile" -Level Success
+            }
         }
 
         # Build target list
