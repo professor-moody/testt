@@ -894,9 +894,34 @@ Invoke-AdaptShareHunter -SharePath "\\server\share" -FindFiles -SearchContent -O
 
         # Get domain info
         if (-not $Domain) {
-            try { $Domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().Name }
-            catch { $Domain = $env:USERDNSDOMAIN }
+            try {
+                $Domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().Name
+            }
+            catch {
+                if ($env:USERDNSDOMAIN) {
+                    $Domain = $env:USERDNSDOMAIN
+                }
+                elseif ($env:USERDOMAIN -and $env:USERDOMAIN -ne $env:COMPUTERNAME) {
+                    # Try to resolve USERDOMAIN to FQDN
+                    try {
+                        $Domain = [System.Net.Dns]::GetHostEntry($env:USERDOMAIN).HostName
+                        if ($Domain -notmatch '\.') { $Domain = $null }
+                    } catch { $Domain = $null }
+                }
+            }
         }
+
+        if (-not $Domain -or $Domain.Trim() -eq '') {
+            Write-Status "Could not determine domain automatically." -Level Error
+            Write-Status "Please specify -Domain <domain.fqdn> or -Server <dc-ip>" -Level Warning
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor Yellow
+            Write-Host "  Invoke-AdaptShareHunter -Domain corp.local" -ForegroundColor White
+            Write-Host "  Invoke-AdaptShareHunter -Server 192.168.1.10 -Domain corp.local" -ForegroundColor White
+            Write-Host "  Invoke-AdaptShareHunter -Server dc01.corp.local" -ForegroundColor White
+            return
+        }
+
         Write-Status "Target domain: $Domain"
 
         # Setup credential args
